@@ -48,27 +48,36 @@ function initGameState(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
   
-  // 创建初始卡牌状态
+  // 创建初始卡牌状态（health 应该等于 max_health）
+  const gongsunliData = cardDB.getCard('gongsunli_003');
+  const lanData = cardDB.getCard('lan_002');
+  const duoliyaData = cardDB.getCard('duoliya_001');
+  
   const blueCards = [
-    { id: 'blue_gongsunli', ...cardDB.getCard('gongsunli_003'), health: 600 },
-    { id: 'blue_lan', ...cardDB.getCard('lan_002'), health: 700 }
+    { id: 'blue_gongsunli', ...gongsunliData, health: gongsunliData.max_health },
+    { id: 'blue_lan', ...lanData, health: lanData.max_health }
   ];
   
   const redCards = [
-    { id: 'red_duoliya', ...cardDB.getCard('duoliya_001'), health: 900 },
-    { id: 'red_lan', ...cardDB.getCard('lan_002'), health: 700 }
+    { id: 'red_duoliya', ...duoliyaData, health: duoliyaData.max_health },
+    { id: 'red_lan', ...lanData, health: lanData.max_health }
   ];
   
   room.gameState = {
     blueCards,
     redCards,
-    turn: 0
+    currentTurn: 1,  // 回合从1开始
+    currentPlayer: 'host'  // 房主先手
   };
   
   // 创建战斗引擎
-  battleEngines.set(roomId, new BattleEngine(roomId, room.gameState));
+  const engine = new BattleEngine(roomId, room.gameState);
+  battleEngines.set(roomId, engine);
   
   console.log('[游戏初始化]', roomId, '战斗引擎创建完成');
+  console.log('  蓝方:', blueCards.map(c => `${c.card_name}(${c.health}/${c.max_health}, ATK:${c.attack})`));
+  console.log('  红方:', redCards.map(c => `${c.card_name}(${c.health}/${c.max_health}, ATK:${c.attack})`));
+  console.log('  初始回合:', room.gameState.currentTurn, '当前玩家:', room.gameState.currentPlayer);
 }
 
 wss.on('connection', (ws) => {
@@ -146,9 +155,10 @@ wss.on('connection', (ws) => {
       }
       else if (data.type === 'game_action') {
         const roomId = playerRooms.get(clientId);
+        const room = rooms.get(roomId);
         const engine = battleEngines.get(roomId);
         
-        if (!roomId || !engine) {
+        if (!roomId || !engine || !room) {
           console.error('[游戏操作] 房间或引擎不存在');
           return;
         }
@@ -163,25 +173,56 @@ wss.on('connection', (ws) => {
             data.data.attacker_id,
             data.data.target_id
           );
+          
+          // 广播攻击结果
+          room.players.forEach(playerId => {
+            sendToClient(playerId, {
+              type: 'opponent_action',
+              action: 'attack',
+              data: result,
+              from: clientId
+            });
+          });
         } else if (data.action === 'skill') {
           result = engine.calculateSkill(
             data.data.caster_id,
             data.data.skill_name,
             data.data.target_ids
           );
-        } else if (data.action === 'end_turn') {
-          result = {}; // 结束回合不需要计算
-        }
-        
-        if (result !== null) {
-          // 广播给双方（包括发起者）
-          const room = rooms.get(roomId);
+          
+          // 广播技能结果
           room.players.forEach(playerId => {
             sendToClient(playerId, {
               type: 'opponent_action',
-              action: data.action,
+              action: 'skill',
               data: result,
               from: clientId
+            });
+          });
+        } else if (data.action === 'end_turn') {
+          // 🎯 服务器权威管理回合切换
+          const gameState = room.gameState;
+          
+          // 回合数+1
+          gameState.currentTurn++;
+          
+          // 判断下一回合是谁的
+          // 奇数回合=房主(host)，偶数回合=客户端(guest)
+          const isHostTurn = (gameState.currentTurn % 2 === 1);
+          gameState.currentPlayer = isHostTurn ? 'host' : 'guest';
+          
+          console.log('[回合切换]', roomId, '第', gameState.currentTurn, '回合，当前玩家:', gameState.currentPlayer);
+          
+          // 广播回合变化给双方
+          room.players.forEach(playerId => {
+            const isHost = (playerId === room.host);
+            const isMyTurn = (isHost && isHostTurn) || (!isHost && !isHostTurn);
+            
+            sendToClient(playerId, {
+              type: 'turn_changed',
+              turn: gameState.currentTurn,
+              current_player: gameState.currentPlayer,
+              is_my_turn: isMyTurn
             });
           });
         }
