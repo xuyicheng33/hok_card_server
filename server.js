@@ -15,6 +15,9 @@ const playerRooms = new Map();
 const battleEngines = new Map(); // 每个房间的战斗引擎
 const cardDB = new CardDatabase();
 
+// 🛡️ 安全配置：最大连接数限制
+const MAX_CONNECTIONS = 2;  // 最多2个玩家连接（1v1对战）
+
 function generateRoomId() {
   return Math.floor(Math.random() * 9 + 1).toString();
 }
@@ -69,9 +72,20 @@ function initGameState(roomId) {
 }
 
 wss.on('connection', (ws) => {
+  // 🛡️ 检查连接数限制
+  if (clients.size >= MAX_CONNECTIONS) {
+    console.log('[拒绝连接] 已达到最大连接数:', MAX_CONNECTIONS);
+    ws.send(JSON.stringify({ 
+      type: 'error', 
+      message: '服务器已满，当前最多支持' + MAX_CONNECTIONS + '个玩家' 
+    }));
+    ws.close();
+    return;
+  }
+  
   const clientId = generateClientId();
   clients.set(clientId, ws);
-  console.log('[连接] 玩家连接:', clientId);
+  console.log('[连接] 玩家连接:', clientId, '(当前连接数:', clients.size + '/' + MAX_CONNECTIONS + ')');
   
   ws.send(JSON.stringify({ type: 'welcome', player_id: clientId }));
   
