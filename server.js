@@ -67,7 +67,9 @@ function initGameState(roomId) {
     blueCards,
     redCards,
     currentTurn: 1,  // 回合从1开始
-    currentPlayer: 'host'  // 房主先手
+    currentPlayer: 'host',  // 房主先手
+    hostSkillPoints: 4,  // 房主技能点
+    guestSkillPoints: 4  // 客户端技能点
   };
   
   // 创建战斗引擎
@@ -211,7 +213,19 @@ wss.on('connection', (ws) => {
           const isHostTurn = (gameState.currentTurn % 2 === 1);
           gameState.currentPlayer = isHostTurn ? 'host' : 'guest';
           
-          console.log('[回合切换]', roomId, '第', gameState.currentTurn, '回合，当前玩家:', gameState.currentPlayer);
+          // 🌟 增加技能点（第3回合开始，上限6点）
+          if (gameState.currentTurn > 2) {
+            if (isHostTurn) {
+              gameState.hostSkillPoints = Math.min(6, gameState.hostSkillPoints + 1);
+              console.log('[技能点] 房主 +1 → ', gameState.hostSkillPoints);
+            } else {
+              gameState.guestSkillPoints = Math.min(6, gameState.guestSkillPoints + 1);
+              console.log('[技能点] 客户端 +1 → ', gameState.guestSkillPoints);
+            }
+          }
+          
+          console.log('[回合切换]', roomId, '第', gameState.currentTurn, '回合，当前玩家:', gameState.currentPlayer,
+            '技能点 房主:', gameState.hostSkillPoints, '客户端:', gameState.guestSkillPoints);
           
           // 广播回合变化给双方
           room.players.forEach(playerId => {
@@ -222,7 +236,9 @@ wss.on('connection', (ws) => {
               type: 'turn_changed',
               turn: gameState.currentTurn,
               current_player: gameState.currentPlayer,
-              is_my_turn: isMyTurn
+              is_my_turn: isMyTurn,
+              host_skill_points: gameState.hostSkillPoints,
+              guest_skill_points: gameState.guestSkillPoints
             });
           });
         }
