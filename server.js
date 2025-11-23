@@ -186,21 +186,46 @@ wss.on('connection', (ws) => {
             });
           });
         } else if (data.action === 'skill') {
+          // 🎯 技能计算（服务器权威）
+          const skillData = data.data;
+          
+          // 准备技能计算参数
+          const skillParams = {
+            target_id: skillData.target_id || null,
+            is_host: (clientId === room.host),
+            is_ally: skillData.is_ally || false
+          };
+          
+          console.log('[技能请求]', skillData.caster_id, skillData.skill_name, skillParams);
+          
+          // 计算技能效果
           result = engine.calculateSkill(
-            data.data.caster_id,
-            data.data.skill_name,
-            data.data.target_ids
+            skillData.caster_id,
+            skillData.skill_name,
+            skillParams
           );
           
-          // 广播技能结果
-          room.players.forEach(playerId => {
-            sendToClient(playerId, {
-              type: 'opponent_action',
-              action: 'skill',
-              data: result,
-              from: clientId
+          if (result && result.success) {
+            console.log('[技能成功]', result.effect_type);
+            
+            // 广播技能结果给双方
+            room.players.forEach(playerId => {
+              sendToClient(playerId, {
+                type: 'opponent_action',
+                action: 'skill',
+                data: result,
+                from_player_id: clientId
+              });
             });
-          });
+          } else {
+            console.error('[技能失败]', result ? result.error : '未知错误');
+            
+            // 只通知施法者失败
+            sendToClient(clientId, {
+              type: 'skill_failed',
+              error: result ? result.error : '技能执行失败'
+            });
+          }
         } else if (data.action === 'end_turn') {
           // 🎯 服务器权威管理回合切换
           const gameState = room.gameState;

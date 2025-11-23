@@ -1,8 +1,11 @@
 // 战斗计算引擎 - 服务器端权威计算
+const SkillCalculator = require('./SkillCalculator');
+
 class BattleEngine {
   constructor(roomId, gameState) {
     this.roomId = roomId;
     this.state = gameState;
+    this.skillCalculator = new SkillCalculator(this);
   }
   
   // 查找卡牌
@@ -64,46 +67,20 @@ class BattleEngine {
     return result;
   }
   
-  // 🎮 计算技能（简化版）
-  calculateSkill(casterId, skillName, targetIds) {
-    const caster = this.findCard(casterId);
+  // 🎮 计算技能（完整版 - 使用SkillCalculator）
+  calculateSkill(casterId, skillName, params) {
+    console.log('[BattleEngine] 计算技能:', casterId, skillName, params);
     
-    if (!caster) {
-      console.error('施法者未找到:', casterId);
-      return null;
+    // 使用SkillCalculator进行完整的技能计算
+    const result = this.skillCalculator.executeSkill(casterId, skillName, params);
+    
+    if (result && result.success) {
+      console.log('[BattleEngine] 技能计算成功:', result.effect_type);
+    } else {
+      console.error('[BattleEngine] 技能计算失败:', result ? result.error : '未知错误');
     }
     
-    const results = [];
-    
-    for (const targetId of targetIds) {
-      const target = this.findCard(targetId);
-      if (!target) continue;
-      
-      // 简化的技能伤害计算
-      let damage = 200; // 默认技能伤害
-      
-      // 暴击判定
-      if (Math.random() < caster.crit_rate) {
-        damage = Math.floor(damage * caster.crit_damage);
-      }
-      
-      target.health -= damage;
-      target.health = Math.max(0, target.health);
-      
-      results.push({
-        target_id: targetId,
-        damage: damage,
-        target_health: target.health
-      });
-    }
-    
-    console.log(`[技能计算] ${caster.card_name} 使用 ${skillName}`);
-    
-    return {
-      caster_id: casterId,
-      skill_name: skillName,
-      results: results
-    };
+    return result;
   }
   
   // 获取当前游戏状态
